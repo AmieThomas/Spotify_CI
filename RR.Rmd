@@ -1,0 +1,95 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-04-09"
+---
+
+```{r}
+# Assuming 'final_df' is your final dataframe
+# Assuming 'cluster_similarity' and 'not_skipped' are binary variables in 'final_df'
+ 
+# Count the number of 1s and 0s in 'cluster_similarity'
+cluster_similarity_count <- table(final$cluster_similarity)
+print(cluster_similarity_count)
+ 
+# Count the number of 1s and 0s in 'not_skipped'
+not_skipped_count <- table(final$not_skipped)
+print(not_skipped_count)
+ 
+ 
+ones_match <- sum(final$cluster_similarity == 0 & final$not_skipped == 0 )
+print(ones_match)
+ 
+zeros_match <- sum(final$cluster_similarity == 0 & final$not_skipped == 0)
+print(zeros_match)
+
+```
+
+```{r}
+#Risk ratio and cornfield analysis of the dataf dataset
+#binary treatment variable- if the current song is different than the previous song or not
+#would we have to see if the previous song wasn't skipped and just keep these cases- we want cases where the listner liked the first song-didnt skip and skipped because the vibe was different(he didnt like it) in the second song
+#I am doing this for now. We can change the code later
+ 
+#First we divide the dataset into nuisance and effect
+ 
+nuisance_indices <- sample(nrow(data), size = nrow(data) / 2)
+    train <- final[nuisance_indices, ]
+    test <- final[-nuisance_indices, ]
+ 
+    # Subset the data frame based on the condition
+    trainT <- train[train$not_skipped == 0, ]
+    trainC <- train[train$not_skipped == 1, ]
+ 
+    # Fit regression models
+    fit1 <- lm(not_skipped ~ . -not_skipped  - a, data = trainC, family= "binomial")
+    fit2 <- lm(not_skipped ~ . -not_skipped - a, data = trainT, family= "binomial")
+ 
+    # Predictions
+    u0 <- predict(fit1, newdata = test)
+    u1 <- predict(fit2, newdata = test)
+ 
+```
+ 
+```{r}
+#count u0- 1s and 0s
+#count u1- 1s and 0s
+#RR= [u1(1s)/total number of u1)]/ [u0(1s)/total number of u0s]
+```
+ 
+ 
+```{r}
+# Assuming u0 and u1 are vectors of predictions from fit1 and fit2 respectively
+ 
+# Count 1s and 0s in u0 and u1
+u0_1s <- sum(u0 == 1)
+u0_0s <- sum(u0 == 0)
+ 
+u1_1s <- sum(u1 == 1)
+u1_0s <- sum(u1 == 0)
+ 
+# Calculate Relative Risk
+RR <- (u1_1s / length(u1)) / (u0_1s / length(u0))
+ 
+```
+ 
+```{r}
+# Assuming 'final_df' is your final dataframe
+# Assuming 'cluster_similarity' and 'not_skipped' are binary variables in 'final_df'
+ 
+# Count the number of 1s and 0s in 'cluster_similarity'
+cluster_similarity_count <- table(final$cluster_similarity)
+print(cluster_similarity_count)
+ 
+# Count the number of 1s and 0s in 'not_skipped'
+not_skipped_count <- table(final$not_skipped)
+print(not_skipped_count)
+ 
+ 
+ones_match <- sum(final$cluster_similarity == 0 & final$not_skipped == 0 )
+print(ones_match)
+ 
+zeros_match <- sum(final$cluster_similarity == 0 & final$not_skipped == 0)
+print(zeros_match)
+ 
+```

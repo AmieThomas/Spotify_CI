@@ -1,0 +1,90 @@
+---
+title: "Cluster_test"
+author: "Amie Thomas"
+date: "2024-04-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(readr)
+library(dbscan)
+library(FNN)
+library(factoextra)
+```
+
+
+```{r}
+#load in datasets
+sessions <- read_csv("log_mini.csv")
+features <- read_csv("tf_mini.csv")
+```
+
+```{r}
+#subset features out of dataset
+sub_feat <- subset(features[ , 5:21])|>
+  select(-9,-13)
+
+#check distribution of features
+colors <- rainbow(length(sub_feat))
+
+feat_plots <- lapply(seq_along(sub_feat), function(i) {
+  var <- names(sub_feat)[i]
+  ggplot(sub_feat, aes(x = !!sym(var), fill = var)) +
+    geom_histogram(color = "black", bins = 30) +
+    scale_fill_manual(values = colors[i]) +
+    labs(title = paste("Histogram of", var))
+})
+print(feat_plots)
+
+#scale means to 0
+stand_feat <- sub_feat |>
+  mutate(across(everything(), scale))
+summary(stand_feat)
+
+```
+
+```{r}
+
+# run kmeans to cluster songs
+set.seed(592)
+feat_clust <- kmeans(scale(sub_feat),10, nstart = 25)
+# K-means clusters showing the group of each individuals
+feat_clust$cluster
+
+#kmeans clustering is not converging so now we will try a different method
+#I think I deleted everything after this because it didn't work :'(
+```
+
+
+```{r}
+#need to perform DBSCAN so that it will run better
+#need eps and minPts first
+
+#setting minPts to the dimensions of my data plus one to suppress noise in my data
+
+minPts <- ncol(stand_feat) + 1
+k <- minPts -1
+kNNdist(stand_feat, k = 10, all = TRUE)
+kNNdistplot(stand_feat, k = 10)|>
+  abline(h = 2.5, lty = 2)
+
+set.seed(592)
+db <- dbscan(stand_feat, eps = 2.5, minPts = 100)
+print(db)
+
+#plot
+fviz_cluster(db, data = sub_feat, stand = FALSE,
+             ellipse = FALSE, show.clust.cent = FALSE,
+             geom = "point",palette = "jco", ggtheme = theme_classic())
+
+#these clusters don't make sense gotta figure out a different way
+```
+
+
+
+
+
+
