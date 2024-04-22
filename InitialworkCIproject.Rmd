@@ -6,37 +6,51 @@ output: html_document
 ---
 
 ```{r}
+#needed libraries
 library(readr)
 library(ggplot2)
 library(dplyr)
-data <- read_csv("log_mini.csv", show_col_types = FALSE)
-fdata<- read_csv("tf_mini.csv", show_col_types = FALSE)
-```
-
-```{r}
-data <- data %>% 
-  filter(hist_user_behavior_is_shuffle == TRUE)
-data <- data %>% 
-  filter(hist_user_behavior_reason_end != "logout")
-data$not_skipped <- ifelse(data$not_skipped == TRUE, 0, 1)
-data <- select(data, -session_length, -skip_2, -skip_1, -skip_3, -short_pause_before_play, -long_pause_before_play, -hour_of_day, -date, -hist_user_behavior_reason_start,-hist_user_behavior_reason_end, -hist_user_behavior_n_seekfwd, -hist_user_behavior_n_seekback, -hist_user_behavior_is_shuffle)
-
-```
-
-```{r}
-# Load required libraries
 library(tidyverse)
 library(stats)
+library(haven)
+```
 
-set.seed(123)
-# Filter out non-numeric columns
-numeric_data <- fdata %>%
+```{r}
+#load in the data
+sessions <- read_csv("log_mini.csv", show_col_types = FALSE)
+features_data <- read_csv("tf_mini.csv", show_col_types = FALSE)
+```
+
+```{r}
+#get rid of sessions that are not random to meet conditional exchangeability
+sessions <- sessions |>
+  filter(hist_user_behavior_is_shuffle == TRUE)
+
+#Get rid of rows where song was skipped because the session ended
+sessions <- sessions |>
+  filter(hist_user_behavior_reason_end != "logout")
+
+# make binary. 0 for not skipped 1 for skipped
+sessions$not_skipped <- ifelse(sessions$not_skipped == TRUE, 0, 1)
+
+#get rid of columns not needed for analysis
+sessions <- select(sessions, -session_length, -skip_2, -skip_1, -skip_3, -short_pause_before_play, -long_pause_before_play, -hour_of_day, -date, -hist_user_behavior_reason_start,-hist_user_behavior_reason_end, -hist_user_behavior_n_seekfwd, -hist_user_behavior_n_seekback, -hist_user_behavior_is_shuffle)
+
+```
+
+```{r}
+#get rid of columns 
+new_feat <- features_data[ , -c(3, 4, 9, 13, 15, 17, 21)]
+
+numeric_data <- new_feat |>
   select(where(is.numeric))
 
 # Perform feature scaling if needed (optional but recommended for PCA)
 scaled_data <- scale(numeric_data)
 
-# Perform PCA to reduce dimensionality
+set.seed(592)
+
+# Perform PCA 
 pca_result <- prcomp(scaled_data, center = TRUE, scale. = TRUE)
 
 # Extract principal components that explain a certain percentage of variance (e.g., 95%)
@@ -46,49 +60,65 @@ num_components <- which.max(variance_explained > 0.95)
 # Select the first 'num_components' principal components
 pc_data <- as.data.frame(predict(pca_result, newdata = scaled_data)[, 1:num_components])
 
-# Perform clustering (e.g., k-means clustering)
-k <- 10  # Number of clusters
+# Perform clustering 
+k <- 10  
 kmeans_result <- kmeans(pc_data, centers = k)
 
 # Add cluster assignments to the original dataset
-data_with_clusters <- cbind(fdata, Cluster = kmeans_result$cluster)
-
-
+data_with_clusters <- cbind(new_feat, Cluster = kmeans_result$cluster)
 ```
 
 ```{r}
-# Assuming your dataframe is named 'data_with_clusters' and contains the original data along with cluster assignments
+#PCA visual
 
-# Load required libraries
-library(ggplot2)
+biplot(pca_result, scale = 0)
 
-# Create scatter plot of the first two principal components colored by cluster
-ggplot(data_with_clusters, aes(x = PC1, y = PC2, color = factor(Cluster))) +
-  geom_point() +
-  labs(x = "Principal Component 1",
-       y = "Principal Component 2",
-       color = "Cluster") +
-  ggtitle("Clusters in PC Space")
-
-# You can also add additional layers or customize the plot further as needed
-
+pc_labels <- paste("PC", 1:num_components)
+text(pca_result$rotation[, 1:num_components], labels = pc_labels, pos = 3, col = "red")
+abline(h = 0, v = 0, col = "gray", lty = 2)
+title("Biplot of PCA Loadings")
+legend("topright", legend = rownames(pca_result$rotation), col = 1:length(pca_result$rotation), pch = 16)
 ```
 
 ```{r}
-data <- data %>% 
+#Clustering visual
+cluster_counts <- table(data_with_clusters$Cluster)
+
+# Convert the counts to a data frame
+cluster_counts_df <- as.data.frame(cluster_counts)
+colnames(cluster_counts_df) <- c("Cluster", "Count")
+
+# Create a bar chart with different colors for each cluster
+ggplot(cluster_counts_df, aes(x = Cluster, y = Count, fill = Cluster)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Count of Songs in Each Cluster", x = "Cluster", y = "Count") +
+  scale_fill_brewer(palette = "Set3") +  # Set a color palette
+  theme_minimal()
+
+```
+
+
+```{r}
+sessions <- sessions |>
   rename(track_id = track_id_clean)
-joined_dataset <- left_join(data, data_with_clusters, by = "track_id")
-# Select specific columns
-dataf <- subset(joined_dataset, select = c("session_id", "session_position", "track_id", "not_skipped", "context_switch", "no_pause_before_play", "premium", "context_type", "Cluster"))
+
+#join sessions dataset with feature clusters to create one dataset
+joined_dataset <- left_join(sessions, data_with_clusters, by = "track_id")
+
+final_data <- subset(joined_dataset, select = c("session_id", "session_position", "track_id", "not_skipped", "context_switch", "no_pause_before_play", "premium", "context_type", "Cluster"))
 
 ```
+
+
+#change name of all variables to be clear- skip and cluster similarity
+####FIX- ALL START OF SESSIONS SHOULD BE NAS
 
 ```{r}
 # Initialize a vector to store the results
-cluster_similarity <- numeric(nrow(dataf))
+cluster_similarity <- numeric(nrow(final_data))
 
 # Iterate through each unique session ID
-unique_session_ids <- unique(dataf$session_id)
+unique_session_ids <- unique(final_data$session_id)
 for (session_id in unique_session_ids) {
   # Subset the dataframe for the current session
   session_data <- subset(dataf, session_id == session_id)
@@ -107,39 +137,29 @@ for (session_id in unique_session_ids) {
   cluster_similarity[1] <- NA
 }
 
-dataf$a<- c(1:51648)
-clus_sim$a<- c(1:51648)
-final<- merge(dataf, clus_sim, by = "a", all.x = TRUE)
+# Merge cluster_similarity back into the original data frame
+final_data$cluster_similarity <- cluster_similarity
 
-#change name of all variables to be clear- skip and cluster similarity
 ```
-####FIX- ALL START OF SESSIONS SHOULD BE NAS
-
 
 ```{r}
-# Assuming 'final_df' is your final dataframe
-# Assuming 'cluster_similarity' and 'not_skipped' are binary variables in 'final_df'
-
 # Count the number of 1s and 0s in 'cluster_similarity'
-cluster_similarity_count <- table(final$cluster_similarity)
+cluster_similarity_count <- table(final_data$cluster_similarity)
 print(cluster_similarity_count)
 
 # Count the number of 1s and 0s in 'not_skipped'
-not_skipped_count <- table(final$not_skipped)
+not_skipped_count <- table(final_data$not_skipped)
 print(not_skipped_count)
 
-
-ones_match <- sum(final$cluster_similarity == 0 & final$not_skipped == 0 )
+ones_match <- sum(final_data$cluster_similarity == 0 & final_data$not_skipped == 0 )
 print(ones_match)
 
-zeros_match <- sum(final$cluster_similarity == 0 & final$not_skipped == 0)
+zeros_match <- sum(final_data$cluster_similarity == 0 & final_data$not_skipped == 0)
 print(zeros_match)
-
 ```
 
 ```{r}
-library(ggplot2)
-ggplot(data, aes(x = data$context_type, fill = factor(not_skipped))) +
+ggplot(sessions, aes(x = sessions$context_type, fill = factor(not_skipped))) +
   geom_bar(position = "fill", color = "black") +
   labs(title = "Ratio of 0s and 1s in Different Categories",
        x = "Category",
@@ -147,96 +167,72 @@ ggplot(data, aes(x = data$context_type, fill = factor(not_skipped))) +
   scale_fill_manual(values = c("1" = "red", "0" = "blue"), labels = c("1" = "TRUE", "0" = "FALSE")) +
   theme_minimal()
 ```
-
 ```{r}
-# Fit logistic regression model
-model <- glm( not_skipped~.- session_id- track_id, data=joined_dataset, family= binomial)
-
-# Extract coefficient estimates and confidence intervals
-coefficients <- summary(model)$coef[,1]
-conf_intervals <- confint(model)
-
-# Extract variable names
-variable_names <- names(coefficients)
-
-# Combine coefficients and confidence intervals into a data frame
-forest_data <- data.frame(variable = variable_names,
-                          coefficient = coefficients,
-                          lower_ci = conf_intervals[,1],
-                          upper_ci = conf_intervals[,2])
-
-# Plot forest plot
-library(ggplot2)
-ggplot(forest_data, aes(x = coefficient, y = variable)) +
-  geom_point() +
-  geom_errorbarh(aes(xmin = lower_ci, xmax = upper_ci), height = 0.2) +
-  labs(title = "Forest Plot of Logistic Regression Coefficients",
-       x = "Coefficient (log odds ratio)",
-       y = "Predictor Variable") +
-  theme_minimal()
-
-plot(lm(not_skipped~.- session_id- track_id, data=joined_dataset, family= binomial, link = "logitsz"))
-```
-
-
-```{r}
-# Load required libraries
-library(ggplot2)
-
-# Add cluster assignments to the PCA-transformed data
-pc_data_with_clusters <- cbind(pc_data, Cluster = kmeans_result$cluster)
-
-# Convert the data to a data frame
-pc_data_with_clusters <- as.data.frame(pc_data_with_clusters)
-
-# Plot the clusters using ggplot
-ggplot(pc_data_with_clusters, aes(x = PC1, y = PC2, color = factor(Cluster))) +
-  geom_point(size = 3) +
-  scale_color_discrete(name = "Cluster") +
-  labs(title = "PCA Clustering Visualization") +
-  theme_minimal()
+# Assuming 'final_df' is your final dataframe
+# Assuming 'cluster_similarity' and 'not_skipped' are binary variables in 'final_df'
+ 
+# Count the number of 1s and 0s in 'cluster_similarity'
+cluster_similarity_count <- table(final_data$cluster_similarity)
+print(cluster_similarity_count)
+ 
+# Count the number of 1s and 0s in 'not_skipped'
+not_skipped_count <- table(final_data$not_skipped)
+print(not_skipped_count)
+ 
+ 
+ones_match <- sum(final_data$cluster_similarity == 0 & final_data$not_skipped == 0 )
+print(ones_match)
+ 
+zeros_match <- sum(final_data$cluster_similarity == 0 & final_data$not_skipped == 0)
+print(zeros_match)
 
 ```
 
 ```{r}
-# Load required libraries
-library(dplyr)
-library(stats)
-
-# Assuming your dataset is named 'your_data'
-
-# Build function for estimating causal effects with risk ratio
-estimate_causal_effects <- function(data, indices) {
-  # Subset the data based on indices
-  subset_data <- data[indices, ]
-  
-  # Fit logistic regression model
-  model <- glm(not_skipped ~ cluster_similarity + X1 + X2, family = binomial, data = subset_data)
-  
-  # Predict the outcome
-  subset_data$predicted_prob <- predict(model, type = "response")
-  
-  # Calculate mean predicted probability for treatment and control groups
-  mean_prob_treatment <- mean(subset_data$predicted_prob[subset_data$cluster_similarity == 1])
-  mean_prob_control <- mean(subset_data$predicted_prob[subset_data$cluster_similarity == 0])
-  
-  # Calculate risk ratio
-  RR <- mean_prob_treatment / mean_prob_control
-  
-  return(RR)
-}
-
-# Set a random seed for reproducibility
-set.seed(123)
-
-# Perform bootstrapping to estimate causal effects
-bootstrap_result <- boot(data = your_data, statistic = estimate_causal_effects, R = 1000)
-
-# Extract the bootstrap confidence interval for the risk ratio
-boot_ci <- boot.ci(bootstrap_result, type = "bca")
-
-# Print the bootstrap confidence interval
-print(boot_ci)
-
+#Risk ratio and cornfield analysis of the dataf dataset
+#binary treatment variable- if the current song is different than the previous song or not
+#would we have to see if the previous song wasn't skipped and just keep these cases- we want cases where the listner liked the first song-didnt skip and skipped because the vibe was different(he didnt like it) in the second song
+#I am doing this for now. We can change the code later
+ 
+#First we divide the dataset into nuisance and effect
+ 
+nuisance_indices <- sample(nrow(data), size = nrow(data) / 2)
+    train <- final_data[nuisance_indices, ]
+    test <- final_data[-nuisance_indices, ]
+ 
+    # Subset the data frame based on the condition
+    trainT <- train[train$not_skipped == 0, ]
+    trainC <- train[train$not_skipped == 1, ]
+ 
+    # Fit regression models
+    fit1 <- lm(not_skipped ~ . -not_skipped  - a, data = trainC, family= "binomial")
+    fit2 <- lm(not_skipped ~ . -not_skipped - a, data = trainT, family= "binomial")
+ 
+    # Predictions
+    u0 <- predict(fit1, newdata = test)
+    u1 <- predict(fit2, newdata = test)
+ 
 ```
-
+ 
+```{r}
+#count u0- 1s and 0s
+#count u1- 1s and 0s
+#RR= [u1(1s)/total number of u1)]/ [u0(1s)/total number of u0s]
+```
+ 
+ 
+```{r}
+# Assuming u0 and u1 are vectors of predictions from fit1 and fit2 respectively
+ 
+# Count 1s and 0s in u0 and u1
+u0_1s <- sum(u0 == 1)
+u0_0s <- sum(u0 == 0)
+ 
+u1_1s <- sum(u1 == 1)
+u1_0s <- sum(u1 == 0)
+ 
+# Calculate Relative Risk
+RR <- (u1_1s / length(u1)) / (u0_1s / length(u0))
+ 
+```
+ 
