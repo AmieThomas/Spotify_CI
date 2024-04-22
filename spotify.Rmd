@@ -81,6 +81,13 @@ fviz_cluster(db, data = sub_feat, stand = FALSE,
              geom = "point",palette = "jco", ggtheme = theme_classic())
 
 #these clusters don't make sense gotta figure out a different way
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+#change test
+>>>>>>> Amie_branch
+>>>>>>> main
 ```
 
 
