@@ -40,7 +40,7 @@ sessions <- select(sessions, -session_length, -skip_2, -skip_1, -skip_3, -short_
 
 ```{r}
 #get rid of columns 
-new_feat <- features_data[ , -c(3, 4, 9, 13, 15, 17, 21)]
+new_feat <- features_data[ , -c(2,3, 4, 9, 13, 15, 17, 21)]
 
 numeric_data <- new_feat |>
   select(where(is.numeric))
@@ -114,6 +114,26 @@ final_data <- subset(joined_dataset, select = c("session_id", "session_position"
 ####FIX- ALL START OF SESSIONS SHOULD BE NAS
 
 ```{r}
+###optimized test code
+
+cluster_similarity <- rep(NA, nrow(final_data))
+
+
+change_indices <- unlist(tapply(final_data$Cluster, final_data$session_id, 
+                                function(x) c(FALSE, diff(x) != 0)))
+
+# Set cluster_similarity to 1 where Cluster changes, 0 otherwise
+cluster_similarity[change_indices] <- 1
+cluster_similarity[is.na(cluster_similarity)] <- 0  
+
+# Merge cluster_similarity back into the original data frame
+final_data$cluster_similarity <- cluster_similarity
+```
+
+
+```{r}
+
+###slow code
 # Initialize a vector to store the results
 cluster_similarity <- numeric(nrow(final_data))
 
@@ -121,7 +141,7 @@ cluster_similarity <- numeric(nrow(final_data))
 unique_session_ids <- unique(final_data$session_id)
 for (session_id in unique_session_ids) {
   # Subset the dataframe for the current session
-  session_data <- subset(dataf, session_id == session_id)
+  session_data <- subset(final_data, session_id == session_id)
   
   # Iterate through each row within the session starting from the second row
   for (i in 2:nrow(session_data)) {
@@ -167,36 +187,13 @@ ggplot(sessions, aes(x = sessions$context_type, fill = factor(not_skipped))) +
   scale_fill_manual(values = c("1" = "red", "0" = "blue"), labels = c("1" = "TRUE", "0" = "FALSE")) +
   theme_minimal()
 ```
-```{r}
-# Assuming 'final_df' is your final dataframe
-# Assuming 'cluster_similarity' and 'not_skipped' are binary variables in 'final_df'
- 
-# Count the number of 1s and 0s in 'cluster_similarity'
-cluster_similarity_count <- table(final_data$cluster_similarity)
-print(cluster_similarity_count)
- 
-# Count the number of 1s and 0s in 'not_skipped'
-not_skipped_count <- table(final_data$not_skipped)
-print(not_skipped_count)
- 
- 
-ones_match <- sum(final_data$cluster_similarity == 0 & final_data$not_skipped == 0 )
-print(ones_match)
- 
-zeros_match <- sum(final_data$cluster_similarity == 0 & final_data$not_skipped == 0)
-print(zeros_match)
-
-```
 
 ```{r}
-#Risk ratio and cornfield analysis of the dataf dataset
 #binary treatment variable- if the current song is different than the previous song or not
 #would we have to see if the previous song wasn't skipped and just keep these cases- we want cases where the listner liked the first song-didnt skip and skipped because the vibe was different(he didnt like it) in the second song
-#I am doing this for now. We can change the code later
  
 #First we divide the dataset into nuisance and effect
- 
-nuisance_indices <- sample(nrow(data), size = nrow(data) / 2)
+ nuisance_indices <- sample(nrow(final_data), size = nrow(final_data) / 2)
     train <- final_data[nuisance_indices, ]
     test <- final_data[-nuisance_indices, ]
  
@@ -205,8 +202,8 @@ nuisance_indices <- sample(nrow(data), size = nrow(data) / 2)
     trainC <- train[train$not_skipped == 1, ]
  
     # Fit regression models
-    fit1 <- lm(not_skipped ~ . -not_skipped  - a, data = trainC, family= "binomial")
-    fit2 <- lm(not_skipped ~ . -not_skipped - a, data = trainT, family= "binomial")
+    fit1 <- glm(not_skipped ~ . -not_skipped, data = trainC, family= "binomial")
+    fit2 <- glm(not_skipped ~ . -not_skipped, data = trainT, family= "binomial")
  
     # Predictions
     u0 <- predict(fit1, newdata = test)
@@ -215,7 +212,13 @@ nuisance_indices <- sample(nrow(data), size = nrow(data) / 2)
 ```
  
 ```{r}
-#count u0- 1s and 0s
+
+#treated with the outcome [Y^1|A=1]
+#treated without the outcome [Y^0|A=1]
+#not treated with the outcome[Y^1|A=0]
+#not treated without the outcome [Y^0|A=0]
+
+#count u0- 1s and 0s 
 #count u1- 1s and 0s
 #RR= [u1(1s)/total number of u1)]/ [u0(1s)/total number of u0s]
 ```
