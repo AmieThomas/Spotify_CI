@@ -28,7 +28,7 @@ sessions <- sessions |>
 
 #Get rid of rows where song was skipped because the session ended
 sessions <- sessions |>
-  filter(hist_user_behavior_reason_end != "logout")
+  filter(hist_user_behavior_reason_end != "logout") 
 
 # make binary. 0 for not skipped 1 for skipped
 sessions$not_skipped <- ifelse(sessions$not_skipped == TRUE, 0, 1)
@@ -105,7 +105,7 @@ sessions <- sessions |>
 #join sessions dataset with feature clusters to create one dataset
 joined_dataset <- left_join(sessions, data_with_clusters, by = "track_id")
 
-final_data <- subset(joined_dataset, select = c("session_id", "session_position", "track_id", "not_skipped", "context_switch", "no_pause_before_play", "premium", "context_type", "Cluster"))
+final<- subset(joined_dataset, select = c("session_id", "session_position", "track_id", "not_skipped", "context_switch", "no_pause_before_play", "premium", "context_type", "Cluster"))
 
 ```
 
@@ -130,6 +130,39 @@ cluster_similarity[is.na(cluster_similarity)] <- 0
 final_data$cluster_similarity <- cluster_similarity
 ```
 
+```{r}
+#optimized code 2
+cluster_similarity <- rep(0, nrow(final))
+
+change_indices <- unlist(tapply(final$Cluster, final$session_id, 
+                                function(x) c(TRUE, diff(x) != 0)))
+
+cluster_similarity[change_indices] <- 1
+
+# Find the indices of the first row for each session ID
+first_row_indices <- tapply(seq_along(final$session_id), final$session_id, head, 1)
+
+# Set the first row of each session ID to NA
+cluster_similarity[first_row_indices] <- NA
+
+final$cluster_similarity <- cluster_similarity
+
+```
+
+```{r}
+cluster_similarity <- rep(NA, nrow(final_data))
+
+change_indices <- unlist(tapply(final_data$Cluster, final_data$session_id, 
+                                function(x) c(NA, diff(x) != 0)))
+
+cluster_similarity[change_indices] <- NA
+
+change_indices <- !is.na(cluster_similarity)
+cluster_similarity[change_indices] <- 1
+
+final_data$cluster_similarity <- cluster_similarity
+
+```
 
 ```{r}
 
