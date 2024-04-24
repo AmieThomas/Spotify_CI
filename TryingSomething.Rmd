@@ -1,0 +1,164 @@
+---
+title: "TryingSomething"
+author: "Aabha Latkar"
+date: "2024-04-24"
+output: html_document
+---
+
+```{r}
+# Assuming you have a dataframe 'final' with columns 'session_id', 'song_id', and 'not_skipped'
+
+# Find the indices of the first song where not_skipped = 1 for each session ID
+first_song_indices <- unlist(tapply(seq_along(final$song_id), final$session_id, 
+                                    function(x) head(x[which(final$not_skipped[x] == 1)], -1)))
+
+# Find the indices of the following song for each first song
+following_song_indices <- first_song_indices + 1
+
+# Get pairs of songs where not_skipped = 1 for the first song and the following song
+pairs <- data.frame(first_song = final$song_id[first_song_indices], 
+                    following_song = final$song_id[following_song_indices])
+
+# Filter out pairs where the following song is not skipped
+filtered_pairs <- pairs[final$not_skipped[following_song_indices] == 1, ]
+
+# Display the filtered pairs
+print(filtered_pairs)
+
+```
+
+```{r}
+library(dplyr)
+
+# Filter the data to include only rows where not_skipped = 1
+filtered_data <- final %>% filter(not_skipped == 1)
+
+# Group the data by session_id and arrange by session_id and event_timestamp
+filtered_data <- filtered_data %>%
+  group_by(session_id)
+
+# Find the indices of the first song for each session ID
+first_song_indices <- filtered_data %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  pull(row_number)
+
+# Find the indices of the following song for each first song
+following_song_indices <- first_song_indices + 1
+
+# Get pairs of songs where not_skipped = 1 for the first song and the following song
+pairs <- data.frame(
+  first_song = filtered_data$song_id[first_song_indices],
+  following_song = filtered_data$song_id[following_song_indices]
+)
+
+# Display the pairs
+print(pairs)
+
+```
+
+```{r}
+library(dplyr)
+
+# Filter the data to include only rows where not_skipped = 1
+filtered_data <- final %>% filter(not_skipped == 1)
+
+# Group the data by session_id and arrange by session_id and event_timestamp
+filtered_data <- filtered_data %>%
+  group_by(session_id)
+
+# Find the indices of the first song for each session ID
+first_song_indices <- filtered_data %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  mutate(first_song_index = row_number()) %>%
+  pull(first_song_index)
+
+# Find the indices of the following song for each first song
+following_song_indices <- first_song_indices + 1
+
+# Get pairs of songs where not_skipped = 1 for the first song and the following song
+pairs <- data.frame(
+  first_song = filtered_data$track_id[first_song_indices],
+  following_song = filtered_data$track_id[following_song_indices]
+)
+
+# Display the pairs
+print(pairs)
+
+```
+
+```{r}
+library(dplyr)
+
+# Assuming you already have the 'pairs' dataset
+
+# Create a dataset with just the pairs
+pairs_df <- pairs
+
+# Add a column to mark if the clusters are the same or different
+pairs_df <- pairs_df %>%
+  mutate(same_cluster = ifelse(first_song == following_song, 0, 1))
+
+# Retain the second row for pairs where clusters are the same, and mark it as 0
+pairs_final <- pairs_df %>%
+  group_by(first_song, following_song) %>%
+  mutate(row_number = row_number()) %>%
+  filter(row_number == 2 & same_cluster == 0) %>%
+  select(-row_number)
+
+# Retain the second row for pairs where clusters are different, and mark it as 1
+pairs_final <- bind_rows(
+  pairs_final,
+  pairs_df %>%
+    group_by(first_song, following_song) %>%
+    mutate(row_number = row_number()) %>%
+    filter(row_number == 2 & same_cluster == 1) %>%
+    select(-row_number)
+)
+
+# Remove the 'same_cluster' column if not needed
+pairs_final <- select(pairs_final, -same_cluster)
+
+# Display the final pairs dataset
+print(pairs_final)
+
+```
+
+```{r}
+# Initialize an empty dataframe to store the final result
+final_result <- data.frame()
+
+# Iterate through each session ID
+unique_sessions <- unique(final$session_id)
+for (session_id in unique_sessions) {
+  # Subset the data for the current session ID
+  session_data <- final[final$session_id == session_id, ]
+  
+  # Find rows where not_skipped == 0
+  skipped_rows <- which(session_data$not_skipped == 0)
+  
+  # Iterate through each skipped row
+  for (i in skipped_rows) {
+    # Check if the cluster of the current row is the same as the cluster of the next row
+    if (session_data$cluster[i] == session_data$cluster[i + 1]) {
+      # If clusters are the same, put 0 in cluster_similarity for the second row
+      session_data$cluster_similarity[i + 1] <- 0
+    } else {
+      # If clusters are different, put 1 in cluster_similarity for the second row
+      session_data$cluster_similarity[i + 1] <- 1
+    }
+  }
+  
+  # Drop the first row for each pair of rows where not_skipped == 0
+  session_data <- session_data[-skipped_rows, ]
+  
+  # Append the modified session data to the final result dataframe
+  final_result <- rbind(final_result, session_data)
+}
+
+# Print the final dataset
+print(final_result)
+
+```
+

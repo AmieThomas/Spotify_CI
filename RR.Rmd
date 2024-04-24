@@ -163,6 +163,9 @@ RRm <- (u1_1s / sum(u1)) / (u0_1s / sum(u0))
 # Assuming 'cluster_similarity' and 'not_skipped' are binary variables in 'final_df'
 
 # Count the number of 1s and 0s in 'cluster_similarity'
+# Assuming cluster_similarity is already created and filled
+final <- final[complete.cases(final$cluster_similarity), ]
+
 cluster_similarity_count <- table(final$cluster_similarity)
 print(cluster_similarity_count)
 
@@ -170,11 +173,10 @@ print(cluster_similarity_count)
 not_skipped_count <- table(final$not_skipped)
 print(not_skipped_count)
 
-A0<- sum(final$cluster_similarity==0, na.rm = TRUE)
-A1<- sum(final$cluster_similarity==1, na.rm = TRUE)
+A0<- sum(final$cluster_similarity==0)
+A1<- sum(final$cluster_similarity==1)
 Y1 <- sum(final$cluster_similarity == 1 & final$not_skipped == 1 )
-
-Y0 <- sum(final$cluster_similarity == 0 & final$not_skipped == 1, na.rm = TRUE)
+Y0 <- sum(final$cluster_similarity == 0 & final$not_skipped == 1)
 
 RR<- (Y1/A1)/(Y0/A0)
 
