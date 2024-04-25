@@ -13,6 +13,8 @@ library(dplyr)
 library(tidyverse)
 library(stats)
 library(haven)
+library(ggfortify)
+library(cluster)
 ```
 
 ```{r}
@@ -40,7 +42,8 @@ sessions <- select(sessions, -session_length, -skip_2, -skip_1, -skip_3, -short_
 
 ```{r}
 #get rid of columns 
-new_feat <- features_data[ , -c(2,3, 4, 9, 13, 15, 17, 21)]
+new_feat <- features_data[ , c(1, 5:22)][ , -c(10, 14, 18)]|>
+  select(-10,-13)
 
 numeric_data <- new_feat |>
   select(where(is.numeric))
@@ -51,6 +54,7 @@ scaled_data <- scale(numeric_data)
 set.seed(592)
 
 # Perform PCA 
+# combines all song features to capture the overall vibe of a song
 pca_result <- prcomp(scaled_data, center = TRUE, scale. = TRUE)
 
 # Extract principal components that explain a certain percentage of variance (e.g., 95%)
@@ -60,43 +64,302 @@ num_components <- which.max(variance_explained > 0.95)
 # Select the first 'num_components' principal components
 pc_data <- as.data.frame(predict(pca_result, newdata = scaled_data)[, 1:num_components])
 
+factor_loadings <- pca_result$rotation
+
+```
+
+```{r}
+#PCA visuals
+
+#biplot
+autoplot(pca_result, data = pca_result, colour = 'black',
+         loadings = TRUE, loadings.colour = 'blue',
+         loadings.label = TRUE, loadings.label.size = 5)
+
+#heatmap
+heatmap(factor_loadings, 
+        col = colorRampPalette(c("blue", "white", "red"))(100),  # Color palette
+        scale = "none",  # No scaling
+        main = "Heatmap of Factor Loadings",  # Title of the plot
+        xlab = "Principal Components",  # X-axis label
+        ylab = "Features"  # Y-axis label
+)
+
+#scree plot
+plot(1:length(variance_explained), variance_explained, 
+     type = "b", 
+     main = "Scree Plot",
+     xlab = "Principal Component",
+     ylab = "Proportion of Variance Explained"
+)
+
+```
+
+```{r}
 # Perform clustering 
-k <- 10  
-kmeans_result <- kmeans(pc_data, centers = k)
+#clustering finds groups of songs that might have the same combination of song features implying that it is the same vibe or genre
+
+scaled_pc_data <- scale(pc_data)
+k <- 7
+kmeans_result <- kmeans(scaled_pc_data, centers = k)
 
 # Add cluster assignments to the original dataset
 data_with_clusters <- cbind(new_feat, Cluster = kmeans_result$cluster)
 ```
 
 ```{r}
-#PCA visual
-
-biplot(pca_result, scale = 0)
-
-pc_labels <- paste("PC", 1:num_components)
-text(pca_result$rotation[, 1:num_components], labels = pc_labels, pos = 3, col = "red")
-abline(h = 0, v = 0, col = "gray", lty = 2)
-title("Biplot of PCA Loadings")
-legend("topright", legend = rownames(pca_result$rotation), col = 1:length(pca_result$rotation), pch = 16)
-```
-
-```{r}
 #Clustering visual
+
+#songs that belong to certain clusters
+data_with_clusters$Cluster <- factor(data_with_clusters$Cluster)
+
+autoplot(pca_result, data = data_with_clusters, colour = 'Cluster', frame = TRUE) +
+  scale_color_manual(values = rainbow(length(unique(data_with_clusters$Cluster))))
+
+
+#distribution of how many songs are in each cluster
 cluster_counts <- table(data_with_clusters$Cluster)
 
-# Convert the counts to a data frame
+
 cluster_counts_df <- as.data.frame(cluster_counts)
 colnames(cluster_counts_df) <- c("Cluster", "Count")
 
-# Create a bar chart with different colors for each cluster
 ggplot(cluster_counts_df, aes(x = Cluster, y = Count, fill = Cluster)) +
   geom_bar(stat = "identity") +
   labs(title = "Count of Songs in Each Cluster", x = "Cluster", y = "Count") +
   scale_fill_brewer(palette = "Set3") +  # Set a color palette
   theme_minimal()
 
+#distribution of the clusters
+
+```
+```{r}
+danceability <- new_feat$danceability
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(danceability, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = danceability, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Danceability in Clusters",
+       x = "Danceability",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  # Use rainbow colors
+  facet_wrap(~ Cluster, nrow = 2) +  # Separate histograms by cluster
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Tilt x-axis labels
+
+
+```
+```{r}
+
+acousticness <- new_feat$acousticness
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(acousticness, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = acousticness, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Acoustic in Clusters",
+       x = "Acousticness",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  
+  facet_wrap(~ Cluster, nrow = 2) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+```
+```{r}
+beat_strength <- new_feat$beat_strength
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(beat_strength, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = beat_strength, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Beat Strength in Clusters",
+       x = "Beat Strength",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  
+  facet_wrap(~ Cluster, nrow = 2) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
 ```
 
+```{r}
+bounciness <- new_feat$bounciness
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(bounciness, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = bounciness, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Bounciness in Clusters",
+       x = "Bounciness",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  
+  facet_wrap(~ Cluster, nrow = 2) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+```
+
+```{r}
+dyn_range_mean <- new_feat$dyn_range_mean
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(dyn_range_mean, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = dyn_range_mean, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Dynamic Range in Clusters",
+       x = "Dynamic Range",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  
+  facet_wrap(~ Cluster, nrow = 2) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+```
+```{r}
+energy <- new_feat$energy
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(energy, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = energy, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Energy in Clusters",
+       x = "Energy",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  
+  facet_wrap(~ Cluster, nrow = 2) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+```
+```{r}
+flatness <- new_feat$flatness
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(flatness, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = flatness, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Flatness in Clusters",
+       x = "Flatness",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  
+  facet_wrap(~ Cluster, nrow = 2) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+```
+```{r}
+instrumentalness <- new_feat$instrumentalness
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(instrumentalness, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = instrumentalness, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Instrumentalness in Clusters",
+       x = "Instrumentalness",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  
+  facet_wrap(~ Cluster, nrow = 2) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+```
+
+```{r}
+loudness <- new_feat$loudness
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(loudness, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = loudness, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Loudness in Clusters",
+       x = "Loudness",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  
+  facet_wrap(~ Cluster, nrow = 2) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+```
+```{r}
+mechanism <- new_feat$mechanism
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(mechanism, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = mechanism, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Mechanism in Clusters",
+       x = "Mechanism",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  
+  facet_wrap(~ Cluster, nrow = 2) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+```
+
+```{r}
+speechiness <- new_feat$speechiness
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(speechiness, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = speechiness, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Speechiness in Clusters",
+       x = "Speechiness",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  
+  facet_wrap(~ Cluster, nrow = 2) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+```
+
+```{r}
+tempo <- new_feat$tempo
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(tempo, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = tempo, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Tempo in Clusters",
+       x = "Tempo",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  
+  facet_wrap(~ Cluster, nrow = 2) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+```
+
+```{r}
+valence <- new_feat$valence
+cluster <- kmeans_result$cluster
+
+data_for_plot <- data.frame(valence, Cluster = factor(cluster))
+
+ggplot(data_for_plot, aes(x = valence, fill = factor(Cluster))) +
+  geom_histogram(binwidth = 0.05, position = "identity", alpha = 0.7) +
+  labs(title = "Distribution of Valence in Clusters",
+       x = "Valence",
+       y = "Frequency") +
+  scale_fill_manual(values = rainbow(nlevels(factor(cluster)))) +  
+  facet_wrap(~ Cluster, nrow = 2) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+```
 
 ```{r}
 sessions <- sessions |>
@@ -105,142 +368,25 @@ sessions <- sessions |>
 #join sessions dataset with feature clusters to create one dataset
 joined_dataset <- left_join(sessions, data_with_clusters, by = "track_id")
 
-final_data <- subset(joined_dataset, select = c("session_id", "session_position", "track_id", "not_skipped", "context_switch", "no_pause_before_play", "premium", "context_type", "Cluster"))
+final <- subset(joined_dataset, select = c("session_id", "session_position", "track_id", "not_skipped", "context_switch", "no_pause_before_play", "premium", "context_type", "Cluster"))
 
 ```
 
-
-#change name of all variables to be clear- skip and cluster similarity
-####FIX- ALL START OF SESSIONS SHOULD BE NAS
-
 ```{r}
-###optimized test code
-
-cluster_similarity <- rep(NA, nrow(final_data))
-
-
-change_indices <- unlist(tapply(final_data$Cluster, final_data$session_id, 
-                                function(x) c(FALSE, diff(x) != 0)))
-
-# Set cluster_similarity to 1 where Cluster changes, 0 otherwise
+#optimized code 
+cluster_similarity <- rep(0, nrow(final))
+ 
+change_indices <- unlist(tapply(final$Cluster, final$session_id, 
+                                function(x) c(TRUE, diff(x) != 0)))
+ 
 cluster_similarity[change_indices] <- 1
-cluster_similarity[is.na(cluster_similarity)] <- 0  
-
-# Merge cluster_similarity back into the original data frame
-final_data$cluster_similarity <- cluster_similarity
-```
-
-
-```{r}
-
-###slow code
-# Initialize a vector to store the results
-cluster_similarity <- numeric(nrow(final_data))
-
-# Iterate through each unique session ID
-unique_session_ids <- unique(final_data$session_id)
-for (session_id in unique_session_ids) {
-  # Subset the dataframe for the current session
-  session_data <- subset(final_data, session_id == session_id)
-  
-  # Iterate through each row within the session starting from the second row
-  for (i in 2:nrow(session_data)) {
-    # Check if the value of 'Cluster' in the current row is different from the previous row
-    if (session_data$Cluster[i] != session_data$Cluster[i - 1]) {
-      cluster_similarity[i] <- 1
-    } else {
-      cluster_similarity[i] <- 0
-    }
-  }
-  
-  # For the first row of the session, set cluster_similarity to NA
-  cluster_similarity[1] <- NA
-}
-
-# Merge cluster_similarity back into the original data frame
-final_data$cluster_similarity <- cluster_similarity
+ 
+# Find the indices of the first row for each session ID
+first_row_indices <- tapply(seq_along(final$session_id), final$session_id, head, 1)
+ 
+# Set the first row of each session ID to NA
+cluster_similarity[first_row_indices] <- NA
+ 
+final$cluster_similarity <- cluster_similarity
 
 ```
-
-```{r}
-# Count the number of 1s and 0s in 'cluster_similarity'
-cluster_similarity_count <- table(final_data$cluster_similarity)
-print(cluster_similarity_count)
-
-# Count the number of 1s and 0s in 'not_skipped'
-not_skipped_count <- table(final_data$not_skipped)
-print(not_skipped_count)
-
-ones_match <- sum(final_data$cluster_similarity == 0 & final_data$not_skipped == 0 )
-print(ones_match)
-
-zeros_match <- sum(final_data$cluster_similarity == 0 & final_data$not_skipped == 0)
-print(zeros_match)
-```
-
-```{r}
-ggplot(sessions, aes(x = sessions$context_type, fill = factor(not_skipped))) +
-  geom_bar(position = "fill", color = "black") +
-  labs(title = "Ratio of 0s and 1s in Different Categories",
-       x = "Category",
-       y = "Proportion") +
-  scale_fill_manual(values = c("1" = "red", "0" = "blue"), labels = c("1" = "TRUE", "0" = "FALSE")) +
-  theme_minimal()
-```
-
-```{r}
-#binary treatment variable- if the current song is different than the previous song or not
-#would we have to see if the previous song wasn't skipped and just keep these cases- we want cases where the listner liked the first song-didnt skip and skipped because the vibe was different(he didnt like it) in the second song
- 
-#First we divide the dataset into nuisance and effect
- nuisance_indices <- sample(nrow(final_data), size = nrow(final_data) / 2)
-    train <- final_data[nuisance_indices, ]
-    test <- final_data[-nuisance_indices, ]
- 
-    # Subset the data frame based on the condition
-    trainT <- train[train$not_skipped == 0, ]
-    trainC <- train[train$not_skipped == 1, ]
- 
-    # Fit regression models
-    fit1 <- glm(not_skipped ~ . -not_skipped, data = trainC, family= "binomial")
-    fit2 <- glm(not_skipped ~ . -not_skipped, data = trainT, family= "binomial")
- 
-    # Predictions
-    u0 <- predict(fit1, newdata = test)
-    u1 <- predict(fit2, newdata = test)
- 
-```
- 
-```{r}
-
-#treated with the outcome [Y^1|A=1]
-#treated without the outcome [Y^0|A=1]
-#not treated with the outcome[Y^1|A=0]
-#not treated without the outcome [Y^0|A=0]
-
-#count u0- 1s and 0s 
-#count u1- 1s and 0s
-#RR= [u1(1s)/total number of u1)]/ [u0(1s)/total number of u0s]
-```
- 
- 
-```{r}
-# Assuming u0 and u1 are vectors of predictions from fit1 and fit2 respectively
- 
-# Count 1s and 0s in u0 and u1
-u0_1s <- sum(u0 == 1)
-u0_0s <- sum(u0 == 0)
- 
-u1_1s <- sum(u1 == 1)
-u1_0s <- sum(u1 == 0)
- 
-# Calculate Relative Risk
-RR <- (u1_1s / length(u1)) / (u0_1s / length(u0))
- 
-```
- 
-```{r}
-
-
-```
-

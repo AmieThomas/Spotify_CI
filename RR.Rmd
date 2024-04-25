@@ -3,27 +3,10 @@ title: "Untitled"
 output: html_document
 date: "2024-04-09"
 ---
-<<<<<<< HEAD
 
 ```{r}
-# Assuming 'final_df' is your final dataframe
-# Assuming 'cluster_similarity' and 'not_skipped' are binary variables in 'final_df'
- 
-# Count the number of 1s and 0s in 'cluster_similarity'
-cluster_similarity_count <- table(final$cluster_similarity)
-print(cluster_similarity_count)
- 
-# Count the number of 1s and 0s in 'not_skipped'
-not_skipped_count <- table(final$not_skipped)
-print(not_skipped_count)
- 
- 
-ones_match <- sum(final$cluster_similarity == 0 & final$not_skipped == 0 )
-print(ones_match)
- 
-zeros_match <- sum(final$cluster_similarity == 0 & final$not_skipped == 0)
-print(zeros_match)
-
+library(Matrix)
+library(glmnet)
 ```
 
 ```{r}
@@ -33,22 +16,50 @@ print(zeros_match)
 #I am doing this for now. We can change the code later
  
 #First we divide the dataset into nuisance and effect
+# Remove the "session_id" and "track_id" columns from the final dataset
+final <- select(final, -session_id, -track_id)
+set.seed(592)
  
-nuisance_indices <- sample(nrow(data), size = nrow(data) / 2)
-    train <- final[nuisance_indices, ]
-    test <- final[-nuisance_indices, ]
+# Divide the data into training and testing sets (50/50 split)
+n <- nrow(final)
+train_index <- sample(1:n, n/2)
+train <- final[train_index, ]
+test <- final[-train_index, ]
  
-    # Subset the data frame based on the condition
-    trainT <- train[train$not_skipped == 0, ]
-    trainC <- train[train$not_skipped == 1, ]
+# Subset the data frame based on the condition
+trainT <- train[train$cluster_similarity == 0, ]
+trainC <- train[train$cluster_similarity == 1, ]
+
+trainT_clean <- trainT[complete.cases(trainT), ]
+trainC_clean <- trainC[complete.cases(trainC), ]
+
+# Fit regression models
+model1 <- glmnet(as.matrix(trainT_clean[, -which(names(trainT_clean) %in% c("cluster_similarity", "not_skipped"))]),
+                 as.factor(trainT_clean$not_skipped), family = "binomial", alpha = 1)
+
+model0 <- glmnet(as.matrix(trainC_clean[, -which(names(trainC_clean) %in% c("cluster_similarity", "not_skipped"))]),
+                 as.factor(trainC_clean$not_skipped), family = "binomial", alpha = 1)
+
+model1 <- glm( not_skipped~. - cluster_similarity -not_skipped ,data= trainT, family= binomial)
+model0 <- glm( not_skipped~. - cluster_similarity -not_skipped , data= trainC, family= binomial)
  
-    # Fit regression models
-    fit1 <- lm(not_skipped ~ . -not_skipped  - a, data = trainC, family= "binomial")
-    fit2 <- lm(not_skipped ~ . -not_skipped - a, data = trainT, family= "binomial")
+test_predictors <- as.matrix(test[, -which(names(test) %in% c("cluster_similarity", "not_skipped"))])
+
+# Predictions for model0
+u0 <- predict(model0, newx = test_predictors, type = "response")
+
+
+# Predictions
+u0 <- predict(model0, newdata = test)
+u1 <- predict(model1, newdata = test)
  
-    # Predictions
-    u0 <- predict(fit1, newdata = test)
-    u1 <- predict(fit2, newdata = test)
+ 
+# Assuming u0 and u1 are the predicted probabilities from logistic regression models
+threshold <- 0.5
+ 
+# Convert predicted probabilities to binary predictions
+u0 <- ifelse(u0 > threshold, 1, 0)
+u1 <- ifelse(u1 > threshold, 1, 0)
  
 ```
  
@@ -70,7 +81,7 @@ u1_1s <- sum(u1 == 1)
 u1_0s <- sum(u1 == 0)
  
 # Calculate Relative Risk
-RR <- (u1_1s / length(u1)) / (u0_1s / length(u0))
+RRm <- (u1_1s / sum(u1)) / (u0_1s / sum(u0))
  
 ```
  
@@ -79,6 +90,9 @@ RR <- (u1_1s / length(u1)) / (u0_1s / length(u0))
 # Assuming 'cluster_similarity' and 'not_skipped' are binary variables in 'final_df'
  
 # Count the number of 1s and 0s in 'cluster_similarity'
+# Assuming cluster_similarity is already created and filled
+final <- final[complete.cases(final$cluster_similarity), ]
+ 
 cluster_similarity_count <- table(final$cluster_similarity)
 print(cluster_similarity_count)
  
@@ -86,121 +100,18 @@ print(cluster_similarity_count)
 not_skipped_count <- table(final$not_skipped)
 print(not_skipped_count)
  
+A0<- sum(final$cluster_similarity==0)
+A1<- sum(final$cluster_similarity==1)
+Y1 <- sum(final$cluster_similarity == 1 & final$not_skipped == 1 )
+Y0 <- sum(final$cluster_similarity == 0 & final$not_skipped == 1)
  
-ones_match <- sum(final$cluster_similarity == 0 & final$not_skipped == 0 )
-print(ones_match)
+RR<- (Y1/A1)/(Y0/A0)
  
-zeros_match <- sum(final$cluster_similarity == 0 & final$not_skipped == 0)
-print(zeros_match)
- 
+#things we can try- making all new sessions NAs
+#altering the code so that only those rows are kept for which the first song wasn't skipped but the second was.
 ```
-=======
-#Hi amie- pushing to my branch
+ 
+ 
 ```{r}
-library(tidyverse)
-library(haven)
-
-read_data <- function(df)
-{
-  full_path <- paste("https://github.com/scunning1975/mixtape/raw/master/", 
-                     df, sep = "")
-  df <- read_dta(full_path)
-  return(df)
-}
-
-titanic <- read_data("titanic.dta") %>% 
-  mutate(d = case_when(class == 1 ~ 1, TRUE ~ 0))
-
-ey1 <- titanic %>% 
-  filter(d == 1) %>%
-  pull(survived) %>% 
-  mean()
-
-ey0 <- titanic %>% 
-  filter(d == 0) %>%
-  pull(survived) %>% 
-  mean()
-
-sdo <- ey1 - ey0
+missing <- sum(is.na(final))
 ```
-
-```{r}
-
-library(stargazer)
-library(magrittr) # for %$% pipes
-library(tidyverse)
-library(haven)
-
-titanic <- read_data("titanic.dta") %>% 
-  mutate(d = case_when(class == 1 ~ 1, TRUE ~ 0))
-
-
-titanic %<>%
-  mutate(s = case_when(sex == 0 & age == 1 ~ 1,
-                       sex == 0 & age == 0 ~ 2,
-                       sex == 1 & age == 1 ~ 3,
-                       sex == 1 & age == 0 ~ 4,
-                       TRUE ~ 0))
-
-ey11 <- titanic %>% 
-  filter(s == 1 & d == 1) %$%
-  mean(survived)
-
-ey10 <- titanic %>% 
-  filter(s == 1 & d == 0) %$%
-  mean(survived)
-
-ey21 <- titanic %>% 
-  filter(s == 2 & d == 1) %$%
-  mean(survived)
-
-ey20 <- titanic %>% 
-  filter(s == 2 & d == 0) %$%
-  mean(survived)
-
-ey31 <- titanic %>% 
-  filter(s == 3 & d == 1) %$%
-  mean(survived)
-
-ey30 <- titanic %>% 
-  filter(s == 3 & d == 0) %$%
-  mean(survived)
-
-ey41 <- titanic %>% 
-  filter(s == 4 & d == 1) %$%
-  mean(survived)
-
-ey40 <- titanic %>% 
-  filter(s == 4 & d == 0) %$%
-  mean(survived)
-
-diff1 = ey11 - ey10
-diff2 = ey21 - ey20
-diff3 = ey31 - ey30
-diff4 = ey41 - ey40
-
-obs = nrow(titanic %>% filter(d == 0))
-
-wt1 <- titanic %>% 
-  filter(s == 1 & d == 0) %$%
-  nrow(.)/obs
-
-wt2 <- titanic %>% 
-  filter(s == 2 & d == 0) %$%
-  nrow(.)/obs
-
-wt3 <- titanic %>% 
-  filter(s == 3 & d == 0) %$%
-  nrow(.)/obs
-
-wt4 <- titanic %>% 
-  filter(s == 4 & d == 0) %$%
-  nrow(.)/obs
-
-wate = diff1*wt1 + diff2*wt2 + diff3*wt3 + diff4*wt4
-
-stargazer(wate, sdo, type = "text")
-
-```
-
->>>>>>> main
