@@ -102,7 +102,7 @@ plot(1:length(variance_explained), variance_explained,
 #clustering finds groups of songs that might have the same combination of song features implying that it is the same vibe or genre
 
 scaled_pc_data <- scale(pc_data)
-k <- 7
+k <- 10
 kmeans_result <- kmeans(scaled_pc_data, centers = k)
 
 # Add cluster assignments to the original dataset
@@ -389,6 +389,7 @@ change_indices <- unlist(tapply(final$Cluster, final$session_id,
                                 function(x) c(TRUE, diff(x) != 0)))
  
 cluster_similarity[change_indices] <- 1
+cluster_similarity[is.na(cluster_similarity)] <- 0 
  
 # Find the indices of the first row for each session ID
 first_row_indices <- tapply(seq_along(final$session_id), final$session_id, head, 1)

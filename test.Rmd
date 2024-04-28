@@ -1,0 +1,278 @@
+---
+title: "test"
+author: "Amie Thomas"
+date: "2024-04-27"
+output: pdf_document
+---
+
+```{r}
+#needed libraries
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(stats)
+library(haven)
+```
+
+```{r}
+#load in the data
+sessions <- read_csv("log_mini.csv", show_col_types = FALSE)
+features_data <- read_csv("tf_mini.csv", show_col_types = FALSE)
+```
+
+```{r}
+#get rid of sessions that are not random to meet conditional exchangeability
+sessions <- sessions |>
+  filter(hist_user_behavior_is_shuffle == TRUE)
+
+#Get rid of rows where song was skipped because the session ended
+sessions <- sessions |>
+  filter(hist_user_behavior_reason_end != "logout")
+
+# make binary. 0 for not skipped 1 for skipped
+sessions$not_skipped <- ifelse(sessions$not_skipped == TRUE, 0, 1)
+
+#get rid of columns not needed for analysis
+sessions <- select(sessions, -session_length, -skip_2, -skip_1, -skip_3, -short_pause_before_play, -long_pause_before_play, -hour_of_day, -date, -hist_user_behavior_reason_start,-hist_user_behavior_reason_end, -hist_user_behavior_n_seekfwd, -hist_user_behavior_n_seekback, -hist_user_behavior_is_shuffle)
+
+```
+
+```{r}
+#get rid of columns
+#new_feat <- features_data[ , -c(2,3, 4, 9, 13, 15, 17, 21)]
+new_feat <- features_data[ , c(1, 5:22)][ , -c(10, 14, 18)]|>
+  select(-10,-13)
+
+numeric_data <- new_feat |>
+  select(where(is.numeric))
+
+# Perform feature scaling if needed (optional but recommended for PCA)
+scaled_data <- scale(numeric_data)
+
+set.seed(592)
+
+# Perform PCA
+pca_result <- prcomp(scaled_data, center = TRUE, scale. = TRUE)
+
+# Extract principal components that explain a certain percentage of variance (e.g., 95%)
+variance_explained <- cumsum(pca_result$sdev^2) / sum(pca_result$sdev^2)
+num_components <- which.max(variance_explained > 0.95)
+
+# Select the first 'num_components' principal components
+pc_data <- as.data.frame(predict(pca_result, newdata = scaled_data)[, 1:num_components])
+
+# Perform clustering
+scaled_pc_data <- scale(pc_data)
+k <- 10  
+kmeans_result <- kmeans(scaled_pc_data, centers = k)
+
+# Add cluster assignments to the original dataset
+data_with_clusters <- cbind(new_feat, Cluster = kmeans_result$cluster)
+```
+
+```{r}
+#PCA visual
+
+# biplot(pca_result, scale = 0)
+# 
+# pc_labels <- paste("PC", 1:num_components)
+# text(pca_result$rotation[, 1:num_components], labels = pc_labels, pos = 3, col = "red")
+# abline(h = 0, v = 0, col = "gray", lty = 2)
+# title("Biplot of PCA Loadings")
+# legend("topright", legend = rownames(pca_result$rotation), col = 1:length(pca_result$rotation), pch = 16)
+```
+
+```{r}
+#Clustering visual
+cluster_counts <- table(data_with_clusters$Cluster)
+
+# Convert the counts to a data frame
+cluster_counts_df <- as.data.frame(cluster_counts)
+colnames(cluster_counts_df) <- c("Cluster", "Count")
+
+# Create a bar chart with different colors for each cluster
+ggplot(cluster_counts_df, aes(x = Cluster, y = Count, fill = Cluster)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Count of Songs in Each Cluster", x = "Cluster", y = "Count") +
+  scale_fill_brewer(palette = "Set3") +  # Set a color palette
+  theme_minimal()
+
+```
+
+
+```{r}
+sessions <- sessions |>
+  rename(track_id = track_id_clean)
+
+#join sessions dataset with feature clusters to create one dataset
+joined_dataset <- left_join(sessions, data_with_clusters, by = "track_id")
+
+final<- subset(joined_dataset, select = c("session_id", "session_position", "track_id", "not_skipped", "context_switch", "no_pause_before_play", "premium", "context_type", "Cluster"))
+
+```
+
+
+#change name of all variables to be clear- skip and cluster similarity
+####FIX- ALL START OF SESSIONS SHOULD BE NAS
+
+```{r}
+###optimized test code
+
+cluster_similarity <- rep(NA, nrow(final_data))
+
+
+change_indices <- unlist(tapply(final_data$Cluster, final_data$session_id,
+                                function(x) c(FALSE, diff(x) != 0)))
+
+# Set cluster_similarity to 1 where Cluster changes, 0 otherwise
+cluster_similarity[change_indices] <- 1
+cluster_similarity[is.na(cluster_similarity)] <- 0  
+
+# Merge cluster_similarity back into the original data frame
+final_data$cluster_similarity <- cluster_similarity
+```
+
+```{r}
+#optimized code 2
+cluster_similarity <- rep(0, nrow(final))
+
+change_indices <- unlist(tapply(final$Cluster, final$session_id,
+                                function(x) c(TRUE, diff(x) != 0)))
+
+cluster_similarity[change_indices] <- 1
+
+# Find the indices of the first row for each session ID
+first_row_indices <- tapply(seq_along(final$session_id), final$session_id, head, 1)
+
+# Set the first row of each session ID to NA
+cluster_similarity[first_row_indices] <- NA
+
+final$cluster_similarity <- cluster_similarity
+
+```
+
+```{r}
+cluster_similarity <- rep(NA, nrow(final_data))
+
+change_indices <- unlist(tapply(final_data$Cluster, final_data$session_id,
+                                function(x) c(NA, diff(x) != 0)))
+
+cluster_similarity[change_indices] <- NA
+
+change_indices <- !is.na(cluster_similarity)
+cluster_similarity[change_indices] <- 1
+
+final_data$cluster_similarity <- cluster_similarity
+
+```
+
+```{r}
+
+###slow code
+# Initialize a vector to store the results
+cluster_similarity <- numeric(nrow(final_data))
+
+# Iterate through each unique session ID
+unique_session_ids <- unique(final_data$session_id)
+for (session_id in unique_session_ids) {
+  # Subset the dataframe for the current session
+  session_data <- subset(final_data, session_id == session_id)
+ 
+  # Iterate through each row within the session starting from the second row
+  for (i in 2:nrow(session_data)) {
+    # Check if the value of 'Cluster' in the current row is different from the previous row
+    if (session_data$Cluster[i] != session_data$Cluster[i - 1]) {
+      cluster_similarity[i] <- 1
+    } else {
+      cluster_similarity[i] <- 0
+    }
+  }
+ 
+  # For the first row of the session, set cluster_similarity to NA
+  cluster_similarity[1] <- NA
+}
+
+# Merge cluster_similarity back into the original data frame
+final_data$cluster_similarity <- cluster_similarity
+
+```
+
+```{r}
+# Count the number of 1s and 0s in 'cluster_similarity'
+cluster_similarity_count <- table(final_data$cluster_similarity)
+print(cluster_similarity_count)
+
+# Count the number of 1s and 0s in 'not_skipped'
+not_skipped_count <- table(final_data$not_skipped)
+print(not_skipped_count)
+
+ones_match <- sum(final_data$cluster_similarity == 0 & final_data$not_skipped == 0 )
+print(ones_match)
+
+zeros_match <- sum(final_data$cluster_similarity == 0 & final_data$not_skipped == 0)
+print(zeros_match)
+```
+
+```{r}
+ggplot(sessions, aes(x = sessions$context_type, fill = factor(not_skipped))) +
+  geom_bar(position = "fill", color = "black") +
+  labs(title = "Ratio of 0s and 1s in Different Categories",
+       x = "Category",
+       y = "Proportion") +
+  scale_fill_manual(values = c("1" = "red", "0" = "blue"), labels = c("1" = "TRUE", "0" = "FALSE")) +
+  theme_minimal()
+```
+
+```{r}
+#binary treatment variable- if the current song is different than the previous song or not
+#would we have to see if the previous song wasn't skipped and just keep these cases- we want cases where the listner liked the first song-didnt skip and skipped because the vibe was different(he didnt like it) in the second song
+ 
+#First we divide the dataset into nuisance and effect
+ nuisance_indices <- sample(nrow(final), size = nrow(final) / 2)
+    train <- final[nuisance_indices, ]
+    test <- final[-nuisance_indices, ]
+ 
+    # Subset the data frame based on the condition
+    trainT <- train[train$not_skipped == 0, ]
+    trainC <- train[train$not_skipped == 1, ]
+ 
+    # Fit regression models
+    fit1 <- glm(not_skipped ~ . -not_skipped, data = trainC, family= "binomial")
+    fit2 <- glm(not_skipped ~ . -not_skipped, data = trainT, family= "binomial")
+ 
+    # Predictions
+    u0 <- predict(fit1, newdata = test)
+    u1 <- predict(fit2, newdata = test)
+ 
+```
+ 
+```{r}
+
+#treated with the outcome [Y^1|A=1]
+#treated without the outcome [Y^0|A=1]
+#not treated with the outcome[Y^1|A=0]
+#not treated without the outcome [Y^0|A=0]
+
+#count u0- 1s and 0s
+#count u1- 1s and 0s
+#RR= [u1(1s)/total number of u1)]/ [u0(1s)/total number of u0s]
+```
+ 
+ 
+```{r}
+# Assuming u0 and u1 are vectors of predictions from fit1 and fit2 respectively
+ 
+# Count 1s and 0s in u0 and u1
+u0_1s <- sum(u0 == 1)
+u0_0s <- sum(u0 == 0)
+ 
+u1_1s <- sum(u1 == 1)
+u1_0s <- sum(u1 == 0)
+ 
+# Calculate Relative Risk
+RR <- (u1_1s / length(u1)) / (u0_1s / length(u0))
+ 
+```
+
+ 
