@@ -44,8 +44,8 @@ sessions <- select(sessions, -session_length, -skip_2, -skip_1, -skip_3, -short_
 
 ```{r}
 #get rid of columns 
-new_feat <- features_data[ , c(1, 5:22)][ , -c(10, 14, 18)]|>
-  select(-10,-13)
+new_feat <- features_data[ , c(1, 5:22)][ , -c(8,9,11,13,15,16,18)]
+ 
 
 numeric_data <- new_feat |>
   select(where(is.numeric))

@@ -1,0 +1,116 @@
+---
+title: "New_Route aka Useless_shit"
+author: "Amie Thomas"
+date: "2024-04-28"
+output: pdf_document
+---
+
+###Data Cleaning and EDA
+```{r}
+#needed libraries
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(stats)
+library(haven)
+library(ggfortify)
+library(cluster)
+```
+
+```{r}
+#load in the data
+sessions <- read_csv("log_mini.csv", show_col_types = FALSE)
+features_data <- read_csv("tf_mini.csv", show_col_types = FALSE)
+```
+
+```{r}
+#get rid of sessions that are not random to meet conditional exchangeability
+sessions <- sessions |>
+  filter(hist_user_behavior_is_shuffle == TRUE)
+
+#Get rid of rows where song was skipped because the session ended
+sessions <- sessions |>
+  filter(hist_user_behavior_reason_end != "logout")
+
+# make binary. 0 for not skipped 1 for skipped
+sessions$not_skipped <- ifelse(sessions$not_skipped == TRUE, 0, 1)
+
+#get rid of columns not needed for analysis
+sessions <- select(sessions, -session_length, -skip_2, -skip_1, -skip_3, -short_pause_before_play, -long_pause_before_play, -hour_of_day, -date, -hist_user_behavior_reason_start,-hist_user_behavior_reason_end, -hist_user_behavior_n_seekfwd, -hist_user_behavior_n_seekback, -hist_user_behavior_is_shuffle)
+
+```
+
+```{r}
+#get rid of columns 
+new_feat <- features_data[ , c(1, 5:22)][ , -c(8,9,11,13,15,16,18)]
+
+custom_scale <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+
+scaled_cols <- as.data.frame(lapply(new_feat[, c('dyn_range_mean', 'loudness', 'tempo')], custom_scale))
+
+scaled_df <- cbind(scaled_cols, new_feat[, !(names(new_feat) %in% c('dyn_range_mean', 'loudness', 'tempo'))])
+
+#rearrange dataframe
+track_id_index <- which(names(scaled_df) == "track_id")
+scaled_df <- scaled_df[, c(track_id_index, setdiff(1:ncol(scaled_df), track_id_index))]
+
+```
+
+```{r}
+# average features to make new ones
+scaled_df$intensity <- rowMeans(scaled_df[, c('bounciness', 'dyn_range_mean', 'loudness', 'tempo')])
+
+scaled_df$rhythm <- rowMeans(scaled_df[, c('danceability', 'beat_strength')])
+
+scaled_df <- scaled_df |>
+  rename(timbre = acousticness)
+
+scaled_df <- scaled_df |>
+  rename(pitch = mode)
+
+#get rid of duplicate info
+new_scaled_df <- scaled_df[ , -c(2:4)][ , -c(3:7)]
+
+#classify features 
+breaks <- c(0, 0.2, 0.4, 0.6, 0.8, 1)
+labels <- c("very low", "low", "medium", "high", "very high")
+
+# Apply the categorization to all features at once
+classified_df <- new_scaled_df %>%
+  mutate_at(vars(intensity, rhythm, timbre, valence),
+            ~ cut(., breaks = breaks, labels = labels, include.lowest = TRUE))
+classified_df <- classified_df |>
+  mutate(pitch = ifelse(pitch == "major", "high", "low"))
+
+```
+
+```{r}
+# Define a function to classify mood based on the combination of features
+classify_mood <- function(intensity, timbre, pitch, rhythm) {
+  if (intensity == "Very High" && timbre == "Medium" && rhythm == "Very High") {
+    return("Happy")
+  } else if (intensity == "High" && (timbre == "Medium" || timbre == "Very High") && (pitch == "High" || rhythm == "High")) {
+    return("Exuberant")
+  } else if (intensity == "Very High" && (timbre == "Low" || timbre == "Medium") && rhythm == "High") {
+    return("Energetic")
+  } else if ((intensity == "Medium" || intensity == "High") && timbre == "Very High" && (pitch == "Low" || rhythm == "Very High")) {
+    return("Frantic")
+  } else if ((intensity == "Medium" || intensity == "Low") && timbre == "Very Low" && (pitch == "Very Low" || rhythm == "Low")) {
+    return("Anxious/Sad")
+  } else if (intensity == "Low" && timbre == "Low" && pitch == "Low" && rhythm == "Low") {
+    return("Depression")
+  } else if (intensity == "Very Low" && timbre == "Very Low" && rhythm == "Very Low") {
+    return("Calm")
+  } else if (intensity == "Low" && (timbre == "Low" || timbre == "High") && pitch == "High") {
+    return("Contentment")
+  } else {
+    return("Unknown")
+  }
+}
+
+classified_df$Mood <- apply(classified_df[, c("intensity", "timbre", "pitch", "rhythm")], 1, function(x) classify_mood(x[1], x[2], x[3], x[4]))
+
+```
