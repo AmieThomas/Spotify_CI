@@ -1,0 +1,65 @@
+---
+title: "Untitled"
+author: "Aabha Latkar"
+date: "2024-04-29"
+output: html_document
+---
+```{r}
+# Fit logistic regression model with interaction terms
+final$cluster_similarity <- factor(final$cluster_similarity)
+final$context_type <- factor(final$context_type)
+final$premium <- factor(final$premium)
+final$Cluster <- factor(final$Cluster)
+
+#logistic_model <- glm(not_skipped ~ cluster_similarity , data = final, family = binomial)
+
+# Display summary of the model
+#summary(logistic_model)
+
+# Interpretation of coefficients:
+# - Coefficient of 'treatment': Log odds ratio of the treatment effect on the outcome
+# - Coefficients of covariates: Log odds ratio of the outcome associated with a one-unit change in each covariate, adjusted for other variables
+# - Interaction coefficients: Log odds ratio of the treatment effect on the outcome, modified by the interaction with each covariate
+
+# Estimate risk ratios adjusted for covariates
+#risk_ratios <- exp(coef(logistic_model))
+
+# Display risk ratios
+#print("Risk Ratios adjusted for covariates and interactions:")
+#print(risk_ratios)
+
+```
+
+
+```{r}
+final$cluster_similarity <- as.numeric(as.character(final$cluster_similarity))
+final$Cluster <- as.numeric(as.character(final$Cluster))
+
+# Fit logistic regression model
+logistic_model2 <- glm(not_skipped ~ cluster_similarity+ premium + context_switch , data = final, family = binomial)
+
+# Extract coefficients
+coefficients2 <- coef(logistic_model2)
+
+# Calculate linear predictor
+linear_predictor2 <- coefficients2[1] +
+  (coefficients2[2] * final$cluster_similarity )
+  
+# Calculate predicted probabilities
+predicted_probs <- plogis(linear_predictor2)
+
+# Combine predicted probabilities with original data
+final_with_probs <- cbind(final, Predicted_Probability = predicted_probs)
+
+# Calculate average probabilities where cluster_similarity = 1
+average_prob_1 <- mean(final_with_probs$Predicted_Probability[final_with_probs$cluster_similarity == 1])
+
+# Calculate average probabilities where cluster_similarity = 0
+average_prob_0 <- mean(final_with_probs$Predicted_Probability[final_with_probs$cluster_similarity == 0])
+Risk_ratio<- (average_prob_1/average_prob_0)
+# Display results
+cat("The risk ratio is", Risk_ratio, "\n")
+
+```
+
+
